@@ -1,0 +1,9 @@
+[mcp_servers.xiaoji_cat_cafe]
+# 用终端里的 command -v node 确认路径
+command = "/opt/homebrew/bin/node"
+# 换成你解压后的绝对路径
+args = ["/Users/你的用户名/Downloads/xiaoji-cat-cafe/server.mjs"]
+
+# 网页和 MCP 默认使用 ~/.xiaoji-cat-cafe。自定义目录时，两边要设成同一个绝对路径。
+# [mcp_servers.xiaoji_cat_cafe.env]
+# CAT_CAFE_DATA_DIR = "/Users/你的用户名/Documents/cat-cafe-save"

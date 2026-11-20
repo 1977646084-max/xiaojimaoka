@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#35263e">
+  <title>小机猫咖 · Cat Coffee</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <main class="stage" aria-label="小机猫咖">
+    <img class="room" src="/assets/room.png" alt="">
+    <section class="stats" aria-label="猫咖状态">
+      <div class="stat coins">
+        <img src="/assets/coin.png" alt="">
+        <span><span class="stat-label">猫猫币</span><b id="coins">—</b></span>
+      </div>
+      <div class="stat fullness">
+        <img src="/assets/heart.png" alt="">
+        <span><span class="stat-label">饱食度</span><b id="fullness" aria-live="polite">— / 100</b></span>
+        <progress id="meter" max="100" value="0" aria-label="饱食度"></progress>
+      </div>
+    </section>
+
+    <nav class="rail care" aria-label="照顾猫咪">
+      <button type="button" data-action="cats"><img src="/assets/cats.png" alt="猫咪"></button>
+      <button type="button" data-action="clean"><img src="/assets/clean.png" alt="清洁"></button>
+      <button type="button" data-action="feed"><img src="/assets/feed.png" alt="喂食"></button>
+      <button type="button" data-action="play"><img src="/assets/play.png" alt="玩耍"></button>
+      <button type="button" data-action="pet"><img src="/assets/pet.png" alt="互动"></button>
+      <button type="button" data-action="rest"><img src="/assets/rest.png" alt="休息"></button>
+    </nav>
+
+    <img class="actor assistant" src="/assets/assistant.png" alt="">
+    <div class="bubble assistant-bubble"><span id="assistant-line">店长，欢迎回来！</span></div>
+    <button type="button" class="actor resident" data-action="cats" aria-label="查看猫咪">
+      <img src="/assets/cat.png" alt="">
+    </button>
+    <div class="bubble cat-bubble"><span id="cat-line">喵～</span></div>
+    <button type="button" class="adopt-cta" data-action="adoption" hidden>领养一只猫</button>
+
+    <nav class="rail cafe" aria-label="店铺菜单">
+      <button type="button" data-action="settings"><img src="/assets/settings.png" alt="设置"></button>
+      <button type="button" data-action="shop"><img src="/assets/shop.png" alt="商店"></button>
+      <button type="button" data-action="save"><img src="/assets/save.png" alt="存档"></button>
+      <button type="button" data-action="tasks"><img src="/assets/tasks.png" alt="任务"></button>
+      <button type="button" data-action="back"><img src="/assets/back.png" alt="返回"></button>
+    </nav>
+    <p class="toast" id="toast" role="status"></p>
+  </main>
+
+  <dialog id="menu" aria-labelledby="menu-title">
+    <header class="menu-header">
+      <h1 id="menu-title"></h1>
+      <button class="close" type="button" aria-label="返回猫咖">×</button>
+    </header>
+    <div id="menu-body"></div>
+    <p class="menu-message" id="menu-message" role="status"></p>
+  </dialog>
+  <p class="rotate">横过手机，查看完整猫咖。</p>
+</body>
+</html>
