@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { isIPv4 } from 'node:net';
 import { parseArgs } from 'node:util';
-import { execute, GameError, saveSprite, snapshot, sprite } from './game.mjs';
+import { execute, GameError, saveSprite, snapshot, sprite, watchOrderClock } from './game.mjs';
 import { products, shop } from './catalog.mjs';
 
 const { values } = parseArgs({
@@ -117,4 +117,7 @@ server.on('error', (error) => {
   console.error(error.code === 'EADDRINUSE' ? '端口已被占用，请用 --port 指定其他端口。' : error.message);
   process.exitCode = 1;
 });
-server.listen(port, values.host, () => console.log(`猫咖网页：http://${values.host}:${server.address().port}`));
+server.listen(port, values.host, () => {
+  watchOrderClock();
+  console.log(`猫咖网页：http://${values.host}:${server.address().port}`);
+});

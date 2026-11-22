@@ -3,7 +3,11 @@ import { products } from './catalog.mjs';
 const opening = 10 * 60;
 const closing = 22 * 60;
 const visitOverhead = 10;
-const servingDelay = 4000;
+const visitDelay = 4000;
+const orderSeconds = Number(process.env.CAT_CAFE_ORDER_SECONDS ?? 20);
+if (!Number.isInteger(orderSeconds) || orderSeconds < 1 || orderSeconds > 3600) {
+  throw new Error('CAT_CAFE_ORDER_SECONDS 必须是 1–3600 之间的整数。');
+}
 const randomInt = (from, to) => from + Math.floor(Math.random() * (to - from + 1));
 const pick = (items) => items[randomInt(0, items.length - 1)];
 const pad = (value) => String(value).padStart(2, '0');
@@ -107,7 +111,7 @@ function closeDay(state, reason) {
 
 function startGuest(guest, at) {
   guest.status = 'serving';
-  guest.readyAt = at + servingDelay;
+  guest.readyAt = at + (guest.lines.length ? orderSeconds * 1000 : visitDelay);
 }
 
 function startAutomaticGuest(day, at) {
@@ -175,7 +179,7 @@ export function closeBusiness(state) {
   return { message: '今天打烊啦。', summary: state.business.lastSummary };
 }
 
-export function businessView(state) {
+export function businessView(state, now = Date.now()) {
   const data = state?.business?.clock === 'game' ? state.business : null;
   const day = data?.day;
   const active = day && !day.closed;
@@ -186,11 +190,25 @@ export function businessView(state) {
   const orders = next?.lines.length ? [{
     id: next.id, name: next.name, lines: orderLines(next), total: productTotal(next), status: next.status,
   }] : [];
+  const orderLog = (day?.guests ?? []).flatMap((guest, index) => {
+    if (!guest.lines.length) return [];
+    const status = guest.status === 'served' ? 'served'
+      : day.closed ? 'cancelled'
+      : index > day.cursor ? 'queued' : guest.status;
+    return [{
+      id: guest.id, name: guest.name, lines: orderLines(guest), total: productTotal(guest), status,
+      ...(status === 'serving' && { remainingMs: Math.max(0, guest.readyAt - now) }),
+    }];
+  });
   const { level, xp } = data?.progress ?? { level: 1, xp: 0 };
   return {
     day: day?.number ?? 0, phase: active ? 'open' : state?.cats.length ? 'closed' : 'before',
     time: clock(day?.minute ?? opening),
-    guests, orders, serving: next?.status === 'serving',
+    guests, orders, orderLog, serving: next?.status === 'serving',
+    work: next?.lines.length && next.status === 'serving'
+      ? { orderId: next.id, readyAt: next.readyAt, remainingMs: Math.max(0, next.readyAt - now) }
+      : null,
+    resigning: Boolean(active && day.resigning),
     served: day?.cursor ?? 0, guestCount: day?.guests.length ?? guestCount(level),
     progress: { level, xp, needed: level === 200 ? null : level * 10, nextGuests: guestCount(level) },
     lastSummary: data?.lastSummary ?? null,

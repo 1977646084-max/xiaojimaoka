@@ -35,15 +35,30 @@
 
     <button type="button" class="actor assistant" data-action="assistant-chat" aria-label="小机互动" aria-expanded="false">
       <img src="/assets/assistant.png" alt="">
+      <span class="assistant-stickers" id="assistant-stickers" aria-hidden="true"></span>
     </button>
     <div class="bubble assistant-bubble" id="assistant-speech" hidden><span id="assistant-line" role="status"></span></div>
     <div class="assistant-fx" id="assistant-fx" aria-hidden="true"></div>
     <div class="assistant-actions" id="assistant-actions" aria-label="小机互动选项" hidden>
-      <button type="button" data-action="assistant-hug">贴贴</button>
-      <button type="button" data-action="assistant-bother">骚扰</button>
-      <button type="button" data-action="assistant-ai" disabled>聊天</button>
+      <div class="robot-idle" id="robot-idle">
+        <button type="button" data-action="assistant-hug">贴贴</button>
+        <button type="button" data-action="assistant-bother">骚扰</button>
+      </div>
+      <div class="robot-tools" id="robot-tools" hidden>
+        <button type="button" data-action="robot-chat">聊天摸鱼</button>
+        <button type="button" data-action="robot-interact" data-robot="poke">戳戳小机</button>
+        <button type="button" data-action="robot-choices" data-choices="feed">投喂小机</button>
+        <button type="button" data-action="robot-choices" data-choices="stick">贴纸恶作剧</button>
+      </div>
+      <form class="robot-message" id="robot-message" hidden>
+        <input type="text" maxlength="200" placeholder="和小机说句话" aria-label="和小机说句话" required>
+        <button type="submit">发送</button>
+      </form>
+      <div class="robot-choices" id="robot-choices" hidden></div>
+      <div class="robot-removals" id="robot-removals" hidden></div>
     </div>
     <p class="assistant-job" id="assistant-job" hidden></p>
+    <p class="assistant-resign" id="assistant-resign" role="status" hidden>辞职申请中……</p>
     <button type="button" class="actor resident" data-action="cat-chat" aria-label="和小猫聊天">
       <img src="/assets/cat.png" alt="">
     </button>

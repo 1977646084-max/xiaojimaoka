@@ -303,20 +303,6 @@ button.assistant {
   width: 70%;
   aspect-ratio: 1;
   display: block;
-  background: linear-gradient(#f9d3a6 0 46%, #b475ad 46%);
-  clip-path: polygon(25% 0, 75% 0, 75% 12%, 87% 12%, 87% 50%, 100% 50%, 100% 86%, 87% 86%, 87% 100%, 13% 100%, 13% 86%, 0 86%, 0 50%, 13% 50%, 13% 12%, 25% 12%);
-  position: relative;
-}
-.guest:nth-child(3n + 2) i { background: linear-gradient(#eac4bd 0 46%, #747dbf 46%); }
-.guest:nth-child(3n) i { background: linear-gradient(#ffdcb4 0 46%, #7e9a68 46%); }
-.guest i::after {
-  content: "";
-  position: absolute;
-  top: 30%;
-  left: 31%;
-  width: 38%;
-  height: 11%;
-  background: linear-gradient(90deg, var(--ink) 0 26%, transparent 26% 74%, var(--ink) 74%);
 }
 .guest:hover i, .guest[aria-pressed="true"] i { filter: brightness(1.18); }
 .guest-speech {
@@ -509,12 +495,28 @@ dialog[data-panel="shop"] {
 .guests.arriving { opacity: 0; pointer-events: none; }
 .guest { width: var(--guest-size); flex: 0 0 var(--guest-size); }
 .guest-sprite {
+  --shell: #ec91b7;
+  --shade: #bd6d9a;
+  position: relative;
   display: block;
-  background: linear-gradient(#f9d3a6 0 46%, #b475ad 46%);
-  clip-path: polygon(25% 0, 75% 0, 75% 12%, 87% 12%, 87% 50%, 100% 50%, 100% 86%, 87% 86%, 87% 100%, 13% 100%, 13% 86%, 0 86%, 0 50%, 13% 50%, 13% 12%, 25% 12%);
+  background: linear-gradient(#fff0dd 0 15%, var(--shell) 15% 74%, var(--shade) 74%);
+  clip-path: polygon(37% 0, 63% 0, 63% 10%, 75% 10%, 75% 21%, 86% 21%, 86% 38%, 96% 38%, 96% 75%, 87% 75%, 87% 89%, 74% 89%, 74% 100%, 26% 100%, 26% 89%, 13% 89%, 13% 75%, 4% 75%, 4% 38%, 14% 38%, 14% 21%, 25% 21%, 25% 10%, 37% 10%);
 }
-.guest-sprite.palette-1 { background: linear-gradient(#eac4bd 0 46%, #747dbf 46%); }
-.guest-sprite.palette-2 { background: linear-gradient(#ffdcb4 0 46%, #7e9a68 46%); }
+.guest-sprite.palette-1 { --shell: #91b8e4; --shade: #667cae; }
+.guest-sprite.palette-2 { --shell: #acd58a; --shade: #73925e; }
+.guest-sprite.palette-3 { --shell: #f2cb78; --shade: #c89a53; }
+.guest-sprite.palette-4 { --shell: #bd9be1; --shade: #8d6baa; }
+.guest-sprite.palette-5 { --shell: #ef9b7a; --shade: #b77764; }
+.guest-sprite.palette-6 { --shell: #85d4ca; --shade: #5c9b9a; }
+.guest-sprite::after {
+  content: "";
+  position: absolute;
+  top: 42%;
+  left: 31%;
+  width: 38%;
+  height: 11%;
+  background: linear-gradient(90deg, var(--ink) 0 26%, transparent 26% 74%, var(--ink) 74%);
+}
 .arrival-layer {
   position: absolute;
   inset: 0;
@@ -540,4 +542,68 @@ dialog[data-panel="shop"] {
 
 @media (prefers-reduced-motion: reduce) {
   .assistant-fx img { animation: none; }
+}
+
+.assistant-job.working {
+  top: 34%;
+  left: 48.5%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  z-index: 4;
+  font-variant-numeric: tabular-nums;
+}
+
+.assistant-actions {
+  display: grid;
+  gap: 4px;
+  max-width: 31%;
+}
+.robot-tools, .robot-idle, .robot-choices, .robot-removals { display: flex; gap: 3px; flex-wrap: wrap; }
+.robot-message { display: flex; gap: 4px; min-width: 0; }
+.robot-message input {
+  width: 0;
+  min-width: 0;
+  flex: 1;
+  padding: 3px 5px;
+  background: #fff8ee;
+  border: 2px solid var(--ink);
+  color: var(--ink);
+  border-radius: 4px;
+}
+#assistant-fx:has(img[src*="mood-"]) { left: 53.5%; top: 35%; }
+.assistant-resign {
+  position: absolute;
+  top: 27%;
+  left: 46.5%;
+  transform: translateX(-50%);
+  z-index: 4;
+  margin: 0;
+  padding: .38em .61em;
+  border: 2px solid #71485f;
+  border-radius: 4px;
+  background: #fff0ef;
+  color: #652c4a;
+  font-size: clamp(11px, 1.22cqw, 18px);
+  font-weight: 850;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.assistant-stickers { position: absolute; inset: 0; pointer-events: none; }
+.assistant-stickers span {
+  position: absolute;
+  width: 29%;
+  aspect-ratio: 1;
+  background: center / contain no-repeat;
+  image-rendering: pixelated;
+  filter: drop-shadow(1px 1px #442b55);
+}
+.assistant-stickers [data-sticker="paw"] {
+  left: 12%;
+  top: 55%;
+  background-image: url("/assets/sticker-paw.png");
+}
+.assistant-stickers [data-sticker="bow"] {
+  right: 21%;
+  top: 5%;
+  background-image: url("/assets/sticker-bow.png");
 }

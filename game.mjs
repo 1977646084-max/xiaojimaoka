@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { shop, products } from './catalog.mjs';
 import { advanceBusiness, assignOrder, businessView, closeBusiness, needsAdvance, openBusiness } from './business.mjs';
+import { interactWithRobot } from './robot.mjs';
 
 const dataDir = resolve(process.env.CAT_CAFE_DATA_DIR || join(homedir(), '.xiaoji-cat-cafe'));
 const breeds = ['橘猫', '奶牛猫', '狸花猫', '三花猫', '黑猫', '白猫', '灰猫'];
@@ -58,7 +59,20 @@ const definitions = [
   ['business_summary', '查看最近一次打烊结算', [], []],
   ['business_open', '开业，从游戏时间 10:00 开始新的一天', [], []],
   ['business_close', '提前打烊并结算已接待的客人', [], []],
+  ['interact_with_robot', '和接单中的小机互动。action 可选 chat、poke、feed、stick、remove_sticker。feed 的 item 为 coffee 或 snack，贴纸为 paw 或 bow。', ['action', 'item', 'message', 'order_id'], ['action']],
+  ['get_shop_status', '查看营业状态、金币、等级、经验、游戏时间和小机当前工作。', [], []],
+  ['get_orders', '查看今天的产品订单和状态。waiting 可接，queued 需等前面的客人，serving 正在制作，served 完成，cancelled 已取消。', [], []],
+  ['get_cats', '查看已领养的猫及饱食度、好感度、清洁度、心情。', [], []],
+  ['get_business_summary', '查看最近一个营业日的打烊记录和收入结算。', [], []],
+  ['accept_order', '接下当前客人的订单并启动小机制作倒计时。先用 get_orders 查可接订单 ID。', ['order_id'], ['order_id']],
+  ['process_order', '检查已接订单，并按截止时间结算到期订单。未到期时返回剩余时间，重复检查不会重复入账。', ['order_id'], ['order_id']],
+  ['care_for_cat', '用现有规则照顾猫。action 可选 feed、play、clean、pet、rest。喂食和玩耍会消耗相应库存，可用 item_id 指定道具。', ['action', 'cat_id', 'item_id'], ['action']],
 ];
+
+const readTools = new Set([
+  'cafe_status', 'shop_catalog', 'business_orders', 'business_summary',
+  'get_shop_status', 'get_orders', 'get_cats', 'get_business_summary',
+]);
 
 export const tools = definitions.map(([name, description, keys, required]) => ({
   name,
@@ -70,7 +84,7 @@ export const tools = definitions.map(([name, description, keys, required]) => ({
     additionalProperties: false,
   },
   annotations: {
-    readOnlyHint: ['cafe_status', 'shop_catalog', 'business_orders', 'business_summary'].includes(name),
+    readOnlyHint: readTools.has(name),
     openWorldHint: false,
     destructiveHint: false,
   },
@@ -149,7 +163,7 @@ function transaction(connection, work) {
 }
 
 function present({ state, revision }, now) {
-  const business = businessView(state);
+  const business = businessView(state, now);
   if (!state) return { state: null, revision, business, observedAt: now };
   const { business: internalBusiness, ...cafe } = state;
   return { state: cafe, revision, business, observedAt: now };
@@ -167,6 +181,23 @@ export function snapshot(now = Date.now()) {
     }
     return present(latest, now);
   });
+}
+
+export function watchOrderClock() {
+  let reportedError = false;
+  const timer = setInterval(() => {
+    try {
+      const connection = database();
+      const now = Date.now();
+      const { state } = load(connection);
+      if (state && needsAdvance(state, now)) snapshot(now);
+      reportedError = false;
+    } catch (error) {
+      if (!reportedError) console.error('猫咖订单时钟：', error.message);
+      reportedError = true;
+    }
+  }, 500);
+  timer.unref();
 }
 
 export function sprite(id) {
@@ -274,13 +305,25 @@ function change(state, name, args, now) {
       return state.assistant;
     case 'shop_buy':
       return buy(state, args.item_id);
+    case 'interact_with_robot': {
+      const work = businessView(state, now).work;
+      if (args.order_id && work?.orderId !== args.order_id) throw new GameError('这笔订单已结束。');
+      const result = interactWithRobot(state, args, now, Boolean(work));
+      if (result.error) throw new GameError(result.error);
+      return result;
+    }
     case 'business_open':
     case 'business_close':
+    case 'accept_order':
     case 'business_assign_order': {
       const result = name === 'business_open' ? openBusiness(state, now)
         : name === 'business_close' ? closeBusiness(state) : assignOrder(state, args.order_id, now);
       if (result.error) throw new GameError(result.error);
       return result;
+    }
+    case 'care_for_cat': {
+      if (!['feed', 'play', 'clean', 'pet', 'rest'].includes(args.action)) throw new GameError('不支持这项照顾操作。');
+      return change(state, `cat_${args.action}`, args, now);
     }
   }
   const cat = findCat(state, args.cat_id);
@@ -309,15 +352,33 @@ function change(state, name, args, now) {
 
 export function execute(name, args = {}, now = Date.now()) {
   validateArgs(name, args);
-  if (['cafe_status', 'shop_catalog', 'business_orders', 'business_summary'].includes(name)) {
+  if (readTools.has(name) || name === 'process_order') {
     const current = snapshot(now);
     const { state, business } = current;
     if (!state && name === 'cafe_status') throw new GameError('请先在网页开店，或调用 cafe_create 创建猫咖');
+    if (name === 'process_order') {
+      const order = business.orderLog.find((item) => item.id === args.order_id);
+      if (!order) throw new GameError('找不到今天的这笔订单。');
+      const messages = {
+        queued: '请先接待前面的客人。', waiting: '请先使用 accept_order 接单。',
+        serving: '小机正在制作，到期会自动结算。', served: '订单已经完成并入账。',
+        cancelled: '店铺已经打烊，这笔订单未入账。',
+      };
+      return { ...current, result: { ...order, message: messages[order.status] } };
+    }
     const results = {
       cafe_status: { ...state, business },
       shop_catalog: { items: shop, coins: state?.coins ?? 0, inventory: state?.inventory ?? {} },
       business_orders: { phase: business.phase, time: business.time, orders: business.orders, products },
       business_summary: business.lastSummary,
+      get_shop_status: {
+        name: state?.shop_name ?? null, phase: business.phase, coins: state?.coins ?? 0,
+        day: business.day, gameTime: business.time, ...business.progress,
+        work: business.work, resigning: business.resigning, achievement: state?.robot?.achievement ?? null,
+      },
+      get_orders: { day: business.day, phase: business.phase, orders: business.orderLog },
+      get_cats: { cats: state?.cats ?? [] },
+      get_business_summary: business.lastSummary,
     };
     return { ...current, result: results[name] };
   }

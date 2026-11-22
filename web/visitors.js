@@ -9,10 +9,9 @@ export async function animateArrival(stage, queue, layer) {
   active.set(queue, arrival);
   queue.classList.add('arriving');
   layer.replaceChildren();
-  const animations = slots.map((slot, index) => {
+  const animations = slots.map((slot) => {
     const rect = slot.getBoundingClientRect();
-    const sprite = document.createElement('i');
-    sprite.className = `guest-sprite palette-${index % 3}`;
+    const sprite = slot.firstElementChild.cloneNode(false);
     layer.append(sprite);
     const end = `translate(${rect.left - scene.left}px, ${rect.top - scene.top}px)`;
     const path = Array.from({ length: 5 }, () =>

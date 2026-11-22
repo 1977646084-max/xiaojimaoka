@@ -1,12 +1,18 @@
 import readline from 'node:readline';
-import { execute, GameError, tools } from './game.mjs';
+import { execute, GameError, tools, watchOrderClock } from './game.mjs';
 
 const protocols = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const mode = process.env.CAT_CAFE_MCP_MODE ?? 'play';
+if (!['play', 'read-only'].includes(mode)) throw new Error('CAT_CAFE_MCP_MODE 必须是 play 或 read-only。');
+const available = mode === 'read-only' ? tools.filter((tool) => tool.annotations.readOnlyHint) : tools;
+const allowed = new Set(available.map((tool) => tool.name));
+watchOrderClock();
 
 function callTool(params) {
   try {
+    if (!allowed.has(params?.name)) throw new GameError('此客户端无权调用该工具，或工具不存在。');
     const { result } = execute(params?.name, params?.arguments);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   } catch (error) {
@@ -39,15 +45,15 @@ input.on('line', (line) => {
       result = {
         protocolVersion: protocols.includes(params?.protocolVersion) ? params.protocolVersion : protocols[0],
         capabilities: { tools: {} },
-        serverInfo: { name: 'xiaoji-cat-cafe', version: '0.4.0' },
-        instructions: '用户说「帮我喂猫」时调用 cat_feed。一只猫时可省略 cat_id。缺猫粮时报告库存不足，由店长决定是否购买。',
+        serverInfo: { name: 'xiaoji-cat-cafe', version: '0.5.0' },
+        instructions: '先查 get_shop_status 和 get_orders。accept_order 启动制作，process_order 检查进度，不会跳过倒计时。喂猫可用 care_for_cat 的 feed；缺猫粮时请告知店长。',
       };
       break;
     case 'ping':
       result = {};
       break;
     case 'tools/list':
-      result = { tools };
+      result = { tools: available };
       break;
     case 'tools/call':
       result = callTool(params);

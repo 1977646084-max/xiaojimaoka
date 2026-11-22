@@ -17,6 +17,9 @@ const speechTimers = new Map();
 let guestTimer;
 let shownGuest;
 let seenSummary = loadSeenSummary();
+let countUntil = 0;
+let robotQueue = Promise.resolve();
+const stickerNames = { paw: '猫爪', bow: '蝴蝶结' };
 
 const care = {
   clean: ['cat_clean', '洗干净啦！'],
@@ -80,6 +83,7 @@ function apply(snapshot, remote = false) {
   const cat = activeCat();
   if (!previous || snapshot.revision !== previous.revision) render();
   updateBusiness(previous?.business);
+  updateRobot(previous);
   if (remote && previousCat && cat?.id === previousCat.id && (cat.feed_count ?? 0) > (previousCat.feed_count ?? 0)) {
     speak('cat', '喵～吃饱啦！');
     celebrate();
@@ -258,7 +262,9 @@ function showSettings() {
     select.value = activeCat().id;
     actors.push(spriteChoice('猫咪素材', 'cat', select));
   }
-  show('猫咖设置', element('p', state.shop_name), form('保存设置', async () => {
+  const achievement = state.robot?.achievement;
+  const record = achievement ? [element('p', `已解锁成就「${achievement.name}」· 第 ${achievement.day} 天`)] : [];
+  show('猫咖设置', element('p', state.shop_name), ...record, form('保存设置', async () => {
     await act('cafe_rename_assistant', { name: name.value, role: role.value });
     menu.close();
     announce('设置已保存。');
@@ -337,9 +343,15 @@ function updateBusiness(previous) {
   if (clock.textContent !== label) clock.textContent = label;
   get('.business-toggle').hidden = !hasCat;
   get('#business-toggle-label').textContent = open ? '打烊' : '开业';
-  const job = get('#assistant-job');
-  job.hidden = !hasCat;
-  job.textContent = business.serving ? '小机 · 接单中' : open ? '小机 · 等待接单' : '小机 · 已下班';
+  countUntil = business.work ? performance.now() + business.work.remainingMs : 0;
+  renderJob();
+  get('#assistant-resign').hidden = !business.resigning;
+  get('#robot-tools').hidden = !business.work;
+  get('#robot-idle').hidden = Boolean(business.work);
+  if (business.work?.orderId !== previous?.work?.orderId) {
+    get('#robot-choices').hidden = true;
+    get('#robot-message').hidden = true;
+  }
   const level = get('#level-status');
   level.hidden = !hasCat;
   const { progress } = business;
@@ -354,7 +366,8 @@ function updateBusiness(previous) {
     dot.dataset.guest = guest.id;
     dot.setAttribute('aria-label', `查看${guest.name}的需求`);
     dot.setAttribute('aria-pressed', String(shownGuest === guest.id));
-    dot.append(element('i', '', { class: 'guest-sprite', 'aria-hidden': 'true' }));
+    const number = Number(guest.id.split('-').at(-1));
+    dot.append(element('i', '', { class: `guest-sprite palette-${(number - 1) % 7}`, 'aria-hidden': 'true' }));
     return dot;
   }));
   const head = business.guests[0];
@@ -370,6 +383,18 @@ function updateBusiness(previous) {
   } else if (old[0]?.id !== head.id) {
     showGuest(head);
   }
+}
+
+function renderJob() {
+  if (!current) return;
+  const { business } = current;
+  const job = get('#assistant-job');
+  job.hidden = business.phase === 'before';
+  const seconds = Math.max(0, Math.ceil((countUntil - performance.now()) / 1000));
+  const label = business.work ? `接单中…… ${seconds} 秒`
+    : business.serving ? '小机 · 接待中' : business.phase === 'open' ? '小机 · 等待接单' : '小机 · 已下班';
+  job.classList.toggle('working', Boolean(business.work));
+  if (job.textContent !== label) job.textContent = label;
 }
 
 function loadSeenSummary() {
@@ -558,7 +583,69 @@ function showAssistantActions() {
   const options = get('#assistant-actions');
   options.hidden = !options.hidden;
   get('.assistant').setAttribute('aria-expanded', String(!options.hidden));
-  speak('assistant', current.business.serving ? '卖力打工中……' : randomLine('assistant'));
+  speak('assistant', current.business.work ? '卖力打工中……' : randomLine('assistant'));
+}
+
+function updateRobot(previous) {
+  const robot = current.state?.robot;
+  const before = previous?.state?.robot;
+  const stickers = robot?.stickers ?? [];
+  if (stickers.join() !== (before?.stickers ?? []).join()) {
+    const art = get('#assistant-stickers');
+    art.replaceChildren(...stickers.map((item) => element('span', '', { 'data-sticker': item })));
+    const removals = get('#robot-removals');
+    removals.hidden = !stickers.length;
+    removals.replaceChildren(...stickers.map((item) => button(`取下${stickerNames[item]}`,
+      () => robotAction('remove_sticker', item))));
+  }
+  const effect = robot?.effect;
+  if (previous && effect && before?.effect?.sequence !== effect.sequence) {
+    speak('assistant', effect.line);
+    showRobotMood(effect.mood);
+  }
+  if (previous && !previous.business.resigning && current.business.resigning) {
+    announce(robot?.achievement?.day === current.business.day
+      ? `解锁成就「${robot.achievement.name}」` : '小机开始写辞职申请。');
+  }
+}
+
+function robotAction(action, item, message) {
+  const args = { action };
+  if (item) args.item = item;
+  if (message) args.message = message;
+  const orderId = current.business.work?.orderId;
+  if (action !== 'remove_sticker' && orderId) args.order_id = orderId;
+  robotQueue = robotQueue.then(async () => {
+    try {
+      await act('interact_with_robot', args);
+    } catch (error) {
+      announce(error.message);
+    }
+  });
+}
+
+function robotChat() {
+  get('#robot-choices').hidden = true;
+  const box = get('#robot-message');
+  box.hidden = false;
+  box.querySelector('input').focus();
+  robotAction('chat');
+}
+
+function robotChoices(kind) {
+  get('#robot-message').hidden = true;
+  const group = get('#robot-choices');
+  const choices = kind === 'feed' ? [['coffee', '递咖啡'], ['snack', '递零食']]
+    : [['paw', '贴猫爪'], ['bow', '贴蝴蝶结']];
+  group.replaceChildren(...choices.map(([id, label]) => button(label, () => robotAction(kind, id))));
+  group.hidden = false;
+}
+
+function showRobotMood(mood) {
+  const layer = get('#assistant-fx');
+  const image = element('img', '', { src: `/assets/mood-${mood}.png`, alt: '' });
+  layer.replaceChildren(image);
+  setTimeout(() => image.remove(), 1250);
 }
 
 function assistantEffect(kind) {
@@ -583,6 +670,9 @@ const actions = {
   'assistant-chat': showAssistantActions,
   'assistant-hug': () => assistantEffect('heart'),
   'assistant-bother': () => assistantEffect('question'),
+  'robot-chat': robotChat,
+  'robot-interact': (target) => robotAction(target.dataset.robot),
+  'robot-choices': (target) => robotChoices(target.dataset.choices),
   'business-toggle': toggleBusiness,
   adoption: openAdoption,
   settings: showSettings,
@@ -597,10 +687,19 @@ const actions = {
 };
 
 stage.addEventListener('click', (event) => {
-  const action = event.target.closest('button')?.dataset.action;
+  const target = event.target.closest('button');
+  const action = target?.dataset.action;
   if (!action || pending || !current) return;
   if (action in care) takeCare(action);
-  else actions[action]?.();
+  else actions[action]?.(target);
+});
+get('#robot-message').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const input = event.currentTarget.querySelector('input');
+  const message = input.value.trim();
+  if (!message) return;
+  robotAction('chat', null, message);
+  input.value = '';
 });
 get('.close').addEventListener('click', () => menu.close());
 menu.addEventListener('close', maybeShowSummary);
@@ -617,5 +716,6 @@ async function sync() {
 
 render();
 sync();
+setInterval(renderJob, 200);
 setInterval(() => { if (!document.hidden) sync(); }, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
