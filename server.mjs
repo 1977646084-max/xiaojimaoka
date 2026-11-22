@@ -1,5 +1,5 @@
 import readline from 'node:readline';
-import { execute, GameError, tools, watchOrderClock } from './game.mjs';
+import { execute, GameError, tools, watchGameClock } from './game.mjs';
 
 const protocols = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
@@ -8,7 +8,7 @@ const mode = process.env.CAT_CAFE_MCP_MODE ?? 'play';
 if (!['play', 'read-only'].includes(mode)) throw new Error('CAT_CAFE_MCP_MODE 必须是 play 或 read-only。');
 const available = mode === 'read-only' ? tools.filter((tool) => tool.annotations.readOnlyHint) : tools;
 const allowed = new Set(available.map((tool) => tool.name));
-watchOrderClock();
+watchGameClock();
 
 function callTool(params) {
   try {
@@ -45,7 +45,7 @@ input.on('line', (line) => {
       result = {
         protocolVersion: protocols.includes(params?.protocolVersion) ? params.protocolVersion : protocols[0],
         capabilities: { tools: {} },
-        serverInfo: { name: 'xiaoji-cat-cafe', version: '0.5.0' },
+        serverInfo: { name: 'xiaoji-cat-cafe', version: '0.5.1' },
         instructions: '先查 get_shop_status 和 get_orders。accept_order 启动制作，process_order 检查进度，不会跳过倒计时。喂猫可用 care_for_cat 的 feed；缺猫粮时请告知店长。',
       };
       break;

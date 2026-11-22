@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { isIPv4 } from 'node:net';
 import { parseArgs } from 'node:util';
-import { execute, GameError, saveSprite, snapshot, sprite, watchOrderClock } from './game.mjs';
+import { execute, GameError, saveSprite, snapshot, sprite, watchGameClock } from './game.mjs';
 import { products, shop } from './catalog.mjs';
 
 const { values } = parseArgs({
@@ -118,6 +118,6 @@ server.on('error', (error) => {
   process.exitCode = 1;
 });
 server.listen(port, values.host, () => {
-  watchOrderClock();
+  watchGameClock();
   console.log(`猫咖网页：http://${values.host}:${server.address().port}`);
 });

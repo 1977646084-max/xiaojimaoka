@@ -169,13 +169,40 @@ function present({ state, revision }, now) {
   return { state: cafe, revision, business, observedAt: now };
 }
 
+const hourMs = 60 * 60 * 1000;
+
+function careDue(cat, now) {
+  return !Number.isFinite(cat.careUpdatedAt) || now - cat.careUpdatedAt >= hourMs;
+}
+
+function gameDue(state, now) {
+  return needsAdvance(state, now) || state.cats.some((cat) => careDue(cat, now));
+}
+
+function advanceGame(state, now) {
+  let changed = advanceBusiness(state, now);
+  for (const cat of state.cats) {
+    if (!careDue(cat, now)) continue;
+    if (!Number.isFinite(cat.careUpdatedAt)) {
+      cat.careUpdatedAt = now;
+    } else {
+      const hours = Math.floor((now - cat.careUpdatedAt) / hourMs);
+      cat.hunger = Math.max(0, cat.hunger - hours * 0.5);
+      cat.cleanliness = Math.max(0, (cat.cleanliness ?? 70) - hours * 0.5);
+      cat.careUpdatedAt += hours * hourMs;
+    }
+    changed = true;
+  }
+  return changed;
+}
+
 export function snapshot(now = Date.now()) {
   const connection = database();
   const current = load(connection);
-  if (!current.state || !needsAdvance(current.state, now)) return present(current, now);
+  if (!current.state || !gameDue(current.state, now)) return present(current, now);
   return transaction(connection, () => {
     const latest = load(connection);
-    if (advanceBusiness(latest.state, now)) {
+    if (advanceGame(latest.state, now)) {
       latest.revision += 1;
       save(connection, latest.state, latest.revision);
     }
@@ -183,17 +210,17 @@ export function snapshot(now = Date.now()) {
   });
 }
 
-export function watchOrderClock() {
+export function watchGameClock() {
   let reportedError = false;
   const timer = setInterval(() => {
     try {
       const connection = database();
       const now = Date.now();
       const { state } = load(connection);
-      if (state && needsAdvance(state, now)) snapshot(now);
+      if (state && gameDue(state, now)) snapshot(now);
       reportedError = false;
     } catch (error) {
-      if (!reportedError) console.error('猫咖订单时钟：', error.message);
+      if (!reportedError) console.error('猫咖时钟：', error.message);
       reportedError = true;
     }
   }, 500);
@@ -221,7 +248,7 @@ export function saveSprite(target, catId, image, type, now = Date.now()) {
       delete actor.sprite;
     }
     if (previous) connection.prepare('DELETE FROM sprites WHERE id = ?').run(previous);
-    advanceBusiness(state, now);
+    advanceGame(state, now);
     save(connection, state, revision + 1);
     return present({ state, revision: revision + 1 }, now);
   });
@@ -248,11 +275,12 @@ function createCandidates() {
   }));
 }
 
-function adopt(state, args) {
+function adopt(state, args, now) {
   if (state.cats.length >= 5) throw new GameError('猫咖最多收养 5 只猫');
   const cat = state.candidates.find((item) => item.id === args.cat_id);
   if (!cat) throw new GameError('候选名单已更新，请重新选择');
   cat.name = text(args.name, '猫咪名字');
+  cat.careUpdatedAt = now;
   state.cats.push(cat);
   state.candidates = [];
   return { message: '领养成功', cat };
@@ -295,7 +323,7 @@ function change(state, name, args, now) {
       state.candidates = createCandidates();
       return state.candidates;
     case 'cat_adopt': {
-      const result = adopt(state, args);
+      const result = adopt(state, args, now);
       if (state.cats.length === 1 && !state.business.day) openBusiness(state, now);
       return result;
     }
@@ -390,11 +418,11 @@ export function execute(name, args = {}, now = Date.now()) {
     if (name === 'cafe_create') {
       if (state) throw new GameError('已有存档。可设置 CAT_CAFE_DATA_DIR 使用另一份存档');
       state = newCafe(args);
-      advanceBusiness(state, now);
+      advanceGame(state, now);
       result = state;
     } else {
       if (!state) throw new GameError('请先在网页开店，或调用 cafe_create 创建猫咖');
-      advanceBusiness(state, now);
+      advanceGame(state, now);
       result = change(state, name, args, now);
     }
     revision += 1;

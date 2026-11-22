@@ -126,7 +126,7 @@ test('网页与两个真实 stdio 进程共享订单、猫咪、权限和后台�
   const client = mcp(t, env);
   const reader = mcp(t, { ...env, CAT_CAFE_MCP_MODE: 'read-only' });
   const hello = await client.request('initialize', { protocolVersion: '2025-11-25' });
-  assert.equal(hello.serverInfo.version, '0.5.0');
+  assert.equal(hello.serverInfo.version, '0.5.1');
   assert.equal((await reader.request('tools/list')).tools.some(({ name }) => name === 'accept_order'), false);
   assert.equal((await reader.tool('get_cats')).cats[0].name, '布丁');
   await reader.tool('care_for_cat', { action: 'feed' }, /无权/);

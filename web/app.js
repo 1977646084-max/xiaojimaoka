@@ -664,9 +664,17 @@ function toggleBusiness() {
   });
 }
 
+function catChat() {
+  const cat = activeCat();
+  const warnings = [];
+  if (cat?.hunger === 0) warnings.push('饿死了喵');
+  if (cat?.cleanliness === 0) warnings.push('好脏好脏喵。');
+  speak('cat', warnings.length ? warnings.join(' ') : randomLine('cat'));
+}
+
 const actions = {
   cats: showCats,
-  'cat-chat': () => speak('cat', randomLine('cat')),
+  'cat-chat': catChat,
   'assistant-chat': showAssistantActions,
   'assistant-hug': () => assistantEffect('heart'),
   'assistant-bother': () => assistantEffect('question'),

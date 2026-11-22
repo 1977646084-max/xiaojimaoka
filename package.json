@@ -1,6 +1,6 @@
 {
   "name": "xiaoji-cat-cafe",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "type": "module",
   "description": "小机猫咖横屏像素网页与 stdio MCP",
