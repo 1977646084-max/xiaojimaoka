@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { shop, products } from './catalog.mjs';
+import { advanceBusiness, assignOrder, businessView, closeBusiness, needsAdvance, openBusiness } from './business.mjs';
 
 const dataDir = resolve(process.env.CAT_CAFE_DATA_DIR || join(homedir(), '.xiaoji-cat-cafe'));
 const breeds = ['橘猫', '奶牛猫', '狸花猫', '三花猫', '黑猫', '白猫', '灰猫'];
@@ -43,12 +45,19 @@ const definitions = [
   ['cafe_status', '查看店铺和猫咪状态，hunger 表示饱食度', [], []],
   ['cat_candidates', '生成三只可领养的猫咪并保存候选名单', [], []],
   ['cat_adopt', '从候选名单领养一只猫咪', ['cat_id', 'name'], ['cat_id', 'name']],
-  ['cat_feed', '帮我喂猫：喂一次花 5 猫猫币，饱食度增加 25（上限 100）。只有一只猫时直接调用，无需 cat_id。有多只猫时先用 cafe_status 按名字查找 cat_id；未指明猫咪时请询问。', ['cat_id'], []],
-  ['cat_play', '陪猫咪玩耍', ['cat_id'], ['cat_id']],
+  ['cat_feed', '帮我喂猫：从库存消耗一份猫粮，增加 25 点饱食度。可用 item_id 选猫粮，只有一只猫时可省略 cat_id。库存空时提示先买猫粮。', ['cat_id', 'item_id'], []],
+  ['cat_play', '陪猫咪玩耍：消耗一个库存道具，增加 5 点好感度。可用 item_id 选择道具。', ['cat_id', 'item_id'], []],
   ['cat_clean', '给猫咪清洁，提高清洁度', ['cat_id'], []],
   ['cat_pet', '摸摸猫咪，提高亲密度', ['cat_id'], []],
   ['cat_rest', '让猫咪休息，恢复心情', ['cat_id'], []],
   ['cafe_rename_assistant', '修改小机名字或职位', ['name', 'role'], []],
+  ['shop_catalog', '查看商店、价格、当前金币和库存', [], []],
+  ['shop_buy', '用金币购买一件猫粮或玩耍道具', ['item_id'], ['item_id']],
+  ['business_orders', '查看到店客人的产品订单和营业状态', [], []],
+  ['business_assign_order', '把一笔产品订单交给小机制作，制作完成后入账', ['order_id'], ['order_id']],
+  ['business_summary', '查看最近一次打烊结算', [], []],
+  ['business_open', '开业，从游戏时间 10:00 开始新的一天', [], []],
+  ['business_close', '提前打烊并结算已接待的客人', [], []],
 ];
 
 export const tools = definitions.map(([name, description, keys, required]) => ({
@@ -60,7 +69,11 @@ export const tools = definitions.map(([name, description, keys, required]) => ({
     required,
     additionalProperties: false,
   },
-  annotations: { readOnlyHint: name === 'cafe_status', openWorldHint: false, destructiveHint: false },
+  annotations: {
+    readOnlyHint: ['cafe_status', 'shop_catalog', 'business_orders', 'business_summary'].includes(name),
+    openWorldHint: false,
+    destructiveHint: false,
+  },
 }));
 
 let db;
@@ -76,6 +89,11 @@ function database() {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         revision INTEGER NOT NULL,
         state TEXT
+      );
+      CREATE TABLE IF NOT EXISTS sprites (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        image BLOB NOT NULL
       );
     `);
     connection.exec('BEGIN IMMEDIATE');
@@ -114,8 +132,68 @@ function load(connection) {
   return { revision: row.revision, state: JSON.parse(row.state) };
 }
 
-export function snapshot() {
-  return load(database());
+function save(connection, state, revision) {
+  connection.prepare('UPDATE cafe SET revision = ?, state = ? WHERE id = 1').run(revision, JSON.stringify(state));
+}
+
+function transaction(connection, work) {
+  connection.exec('BEGIN IMMEDIATE');
+  try {
+    const result = work();
+    connection.exec('COMMIT');
+    return result;
+  } catch (error) {
+    connection.exec('ROLLBACK');
+    throw error;
+  }
+}
+
+function present({ state, revision }, now) {
+  const business = businessView(state);
+  if (!state) return { state: null, revision, business, observedAt: now };
+  const { business: internalBusiness, ...cafe } = state;
+  return { state: cafe, revision, business, observedAt: now };
+}
+
+export function snapshot(now = Date.now()) {
+  const connection = database();
+  const current = load(connection);
+  if (!current.state || !needsAdvance(current.state, now)) return present(current, now);
+  return transaction(connection, () => {
+    const latest = load(connection);
+    if (advanceBusiness(latest.state, now)) {
+      latest.revision += 1;
+      save(connection, latest.state, latest.revision);
+    }
+    return present(latest, now);
+  });
+}
+
+export function sprite(id) {
+  return database().prepare('SELECT type, image FROM sprites WHERE id = ?').get(id);
+}
+
+export function saveSprite(target, catId, image, type, now = Date.now()) {
+  const connection = database();
+  return transaction(connection, () => {
+    const { state, revision } = load(connection);
+    if (!state) throw new GameError('请先开店。');
+    const actor = target === 'assistant' ? state.assistant
+      : target === 'cat' ? state.cats.find((cat) => cat.id === catId) : null;
+    if (!actor) throw new GameError('找不到要更换素材的角色。');
+    const previous = actor.sprite;
+    if (image) {
+      const id = randomUUID();
+      connection.prepare('INSERT INTO sprites VALUES (?, ?, ?)').run(id, type, image);
+      actor.sprite = id;
+    } else {
+      delete actor.sprite;
+    }
+    if (previous) connection.prepare('DELETE FROM sprites WHERE id = ?').run(previous);
+    advanceBusiness(state, now);
+    save(connection, state, revision + 1);
+    return present({ state, revision: revision + 1 }, now);
+  });
 }
 
 function validateArgs(name, args) {
@@ -149,40 +227,73 @@ function adopt(state, args) {
   return { message: '领养成功', cat };
 }
 
-function feed(state, cat) {
-  if (state.coins < 5) throw new GameError('猫猫币不足');
+function itemForUse(state, id, kind) {
+  const stocked = shop.filter((item) => item.kind === kind && (state.inventory?.[item.id] ?? 0) > 0);
+  const item = id ? stocked.find((candidate) => candidate.id === id) : stocked[0];
+  if (!item) throw new GameError(kind === 'food' ? '没有可用猫粮，请先在商店购买。' : '没有可用的玩耍道具，请先在商店购买。');
+  state.inventory[item.id] -= 1;
+  return item;
+}
+
+function feed(state, cat, id) {
+  const food = itemForUse(state, id, 'food');
   const previous = cat.hunger;
-  state.coins -= 5;
   cat.hunger = cap(cat.hunger + 25);
   cat.bond = cap(cat.bond + 2);
   cat.feed_count = (cat.feed_count ?? 0) + 1;
   return {
-    message: `已喂食「${cat.name}」，饱食度 ${previous} → ${cat.hunger}/100，剩余 ${state.coins} 猫猫币。`,
+    message: `已用${food.name}喂「${cat.name}」，饱食度 ${previous} → ${cat.hunger}/100。`,
     cat, coins: state.coins,
   };
 }
 
-function change(state, name, args) {
+function buy(state, id) {
+  const item = shop.find((entry) => entry.id === id);
+  if (!item) throw new GameError('找不到这件商品。');
+  if (state.coins < item.price) throw new GameError('金币不足。');
+  state.inventory ??= {};
+  state.coins -= item.price;
+  state.inventory[id] = (state.inventory[id] ?? 0) + 1;
+  return { item, coins: state.coins, quantity: state.inventory[id], message: `已购入${item.name}。` };
+}
+
+function change(state, name, args, now) {
   switch (name) {
     case 'cat_candidates':
       if (state.cats.length >= 5) throw new GameError('猫咖最多收养 5 只猫');
       state.candidates = createCandidates();
       return state.candidates;
-    case 'cat_adopt':
-      return adopt(state, args);
+    case 'cat_adopt': {
+      const result = adopt(state, args);
+      if (state.cats.length === 1 && !state.business.day) openBusiness(state, now);
+      return result;
+    }
     case 'cafe_rename_assistant':
       if (args.name?.trim()) state.assistant.name = args.name.trim();
       if (args.role?.trim()) state.assistant.role = args.role.trim();
       return state.assistant;
+    case 'shop_buy':
+      return buy(state, args.item_id);
+    case 'business_open':
+    case 'business_close':
+    case 'business_assign_order': {
+      const result = name === 'business_open' ? openBusiness(state, now)
+        : name === 'business_close' ? closeBusiness(state) : assignOrder(state, args.order_id, now);
+      if (result.error) throw new GameError(result.error);
+      return result;
+    }
   }
   const cat = findCat(state, args.cat_id);
   switch (name) {
     case 'cat_feed':
-      return feed(state, cat);
-    case 'cat_play':
+      return feed(state, cat, args.item_id);
+    case 'cat_play': {
+      const item = itemForUse(state, args.item_id, 'toy');
+      const previous = cat.bond;
       cat.mood = cap(cat.mood + 15);
       cat.bond = cap(cat.bond + 5);
-      break;
+      return { cat, item, message: `${cat.name}玩了${item.name}，好感度 ${previous} → ${cat.bond}/100。` };
+    }
     case 'cat_clean':
       cat.cleanliness = cap((cat.cleanliness ?? 70) + 25);
       break;
@@ -196,33 +307,38 @@ function change(state, name, args) {
   return { cat };
 }
 
-export function execute(name, args = {}) {
+export function execute(name, args = {}, now = Date.now()) {
   validateArgs(name, args);
-  if (name === 'cafe_status') {
-    const current = snapshot();
-    if (!current.state) throw new GameError('请先在网页开店，或调用 cafe_create 创建猫咖');
-    return { ...current, result: current.state };
+  if (['cafe_status', 'shop_catalog', 'business_orders', 'business_summary'].includes(name)) {
+    const current = snapshot(now);
+    const { state, business } = current;
+    if (!state && name === 'cafe_status') throw new GameError('请先在网页开店，或调用 cafe_create 创建猫咖');
+    const results = {
+      cafe_status: { ...state, business },
+      shop_catalog: { items: shop, coins: state?.coins ?? 0, inventory: state?.inventory ?? {} },
+      business_orders: { phase: business.phase, time: business.time, orders: business.orders, products },
+      business_summary: business.lastSummary,
+    };
+    return { ...current, result: results[name] };
   }
 
   const connection = database();
-  connection.exec('BEGIN IMMEDIATE');
-  try {
+  return transaction(connection, () => {
     let { state, revision } = load(connection);
     let result;
     if (name === 'cafe_create') {
       if (state) throw new GameError('已有存档。可设置 CAT_CAFE_DATA_DIR 使用另一份存档');
       state = newCafe(args);
+      advanceBusiness(state, now);
       result = state;
     } else {
       if (!state) throw new GameError('请先在网页开店，或调用 cafe_create 创建猫咖');
-      result = change(state, name, args);
+      advanceBusiness(state, now);
+      result = change(state, name, args, now);
     }
     revision += 1;
-    connection.prepare('UPDATE cafe SET revision = ?, state = ? WHERE id = 1').run(revision, JSON.stringify(state));
-    connection.exec('COMMIT');
-    return { state, revision, result };
-  } catch (error) {
-    connection.exec('ROLLBACK');
-    throw error;
-  }
+    save(connection, state, revision);
+    const view = present({ state, revision }, now);
+    return { ...view, result: name === 'cafe_create' ? view.state : result };
+  });
 }

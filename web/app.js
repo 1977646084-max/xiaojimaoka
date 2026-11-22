@@ -1,20 +1,28 @@
+import { randomLine } from './dialogue.js';
+import { animateArrival } from './visitors.js';
+
 const get = (selector) => document.querySelector(selector);
+const stage = get('.stage');
 const menu = get('#menu');
 const menuBody = get('#menu-body');
 const menuMessage = get('#menu-message');
 const toast = get('#toast');
 const resident = get('.resident');
 let current;
+let catalog;
 let activeCatId;
 let pending = false;
 let toastTimer;
+const speechTimers = new Map();
+let guestTimer;
+let shownGuest;
+let seenSummary = loadSeenSummary();
 
 const care = {
   clean: ['cat_clean', '洗干净啦！'],
   feed: ['cat_feed', '吃得好饱！'],
   play: ['cat_play', '玩得很开心！'],
   pet: ['cat_pet', '呼噜呼噜～'],
-  rest: ['cat_rest', '睡了个好觉。'],
 };
 
 function activeCat() {
@@ -24,7 +32,7 @@ function activeCat() {
 
 function announce(message) {
   clearTimeout(toastTimer);
-  toast.textContent = message;
+  toast.textContent = menu.open ? '' : message;
   if (menu.open) menuMessage.textContent = message;
   if (message) toastTimer = setTimeout(() => { toast.textContent = ''; }, 4800);
 }
@@ -37,38 +45,48 @@ resident.addEventListener('animationend', () => resident.classList.remove('celeb
 
 function updateButtons() {
   const cat = activeCat();
-  for (const button of document.querySelectorAll('.rail button, .resident, .adopt-cta')) {
+  for (const button of document.querySelectorAll('.rail button, .actor, .adopt-cta, .business-clock')) {
     button.disabled = pending || !current || (button.dataset.action in care && !cat);
   }
+}
+
+function actorSprite(actor, id, fallback) {
+  const image = get(`${actor} img`);
+  const source = id ? `/assets/custom/${id}` : fallback;
+  if (image.getAttribute('src') !== source) image.src = source;
 }
 
 function render() {
   const state = current?.state;
   const cat = activeCat();
   get('#coins').textContent = state?.coins ?? '—';
-  const fullness = get('#fullness');
-  const label = cat ? `${cat.hunger} / 100` : '— / 100';
-  if (fullness.textContent !== label) fullness.textContent = label;
+  const bond = get('#bond');
+  const label = cat ? `${cat.bond} / 100` : '— / 100';
+  if (bond.textContent !== label) bond.textContent = label;
   get('#meter').hidden = !cat;
-  get('#meter').value = cat?.hunger ?? 0;
-  const assistant = state?.assistant?.name;
-  get('#assistant-line').textContent = cat ? `${assistant}在这儿！` : '选一只猫吧！';
-  get('#cat-line').textContent = cat ? `${cat.name} · 喵～` : '喵～';
+  get('#meter').value = cat?.bond ?? 0;
+  actorSprite('.resident', cat?.sprite, '/assets/cat.png');
+  actorSprite('.assistant', state?.assistant.sprite, '/assets/assistant.png');
   get('.adopt-cta').hidden = !current || Boolean(cat);
   updateButtons();
 }
 
 function apply(snapshot, remote = false) {
   if (current && snapshot.revision < current.revision) return;
-  const previous = activeCat();
+  if (current && snapshot.revision === current.revision && snapshot.observedAt < current.observedAt) return;
+  const previousCat = activeCat();
+  const previous = current;
   current = snapshot;
   const cat = activeCat();
-  render();
-  if (remote && previous && cat?.id === previous.id && (cat.feed_count ?? 0) > (previous.feed_count ?? 0)) {
-    get('#cat-line').textContent = `${cat.name} · 吃饱了！`;
+  if (!previous || snapshot.revision !== previous.revision) render();
+  updateBusiness(previous?.business);
+  if (remote && previousCat && cat?.id === previousCat.id && (cat.feed_count ?? 0) > (previousCat.feed_count ?? 0)) {
+    speak('cat', '喵～吃饱啦！');
     celebrate();
-    announce(`${cat.name} 已喂食，饱食度 ${cat.hunger} / 100`);
+    announce(`已喂食「${cat.name}」。`);
   }
+  updateOpenPanel(previous);
+  maybeShowSummary();
 }
 
 async function api(route, options) {
@@ -81,7 +99,7 @@ async function api(route, options) {
 async function refresh() {
   if (pending) return;
   const next = await api('/api/state');
-  if (!pending && (!current || next.revision !== current.revision)) apply(next, true);
+  if (!pending) apply(next, true);
 }
 
 async function act(name, args = {}) {
@@ -106,6 +124,7 @@ async function run(work) {
   } finally {
     pending = false;
     updateButtons();
+    maybeShowSummary();
   }
 }
 
@@ -146,6 +165,7 @@ function form(submitLabel, onSubmit, fields) {
 }
 
 function show(title, ...body) {
+  delete menu.dataset.panel;
   get('#menu-title').textContent = title;
   menuMessage.textContent = '';
   menuBody.replaceChildren(...body);
@@ -160,19 +180,29 @@ function showCats() {
     openAdoption();
     return;
   }
-  const select = element('select');
-  for (const friend of state.cats) select.append(element('option', friend.name, { value: friend.id }));
-  select.value = cat.id;
-  select.addEventListener('change', () => {
-    activeCatId = select.value;
-    render();
-    showCats();
-    menu.querySelector('select')?.focus();
-  });
+  const list = element('ul', '', { class: 'cat-list' });
+  for (const friend of state.cats) {
+    const item = element('li');
+    item.append(button(`${friend.name} · ${friend.coat}`, () => showCatDetails(friend.id)));
+    list.append(item);
+  }
   const buttons = element('div', '', { class: 'menu-buttons' });
   if (state.cats.length < 5) buttons.append(button('领养新猫咪', openAdoption, true));
-  const detail = element('p', `饱食度 ${cat.hunger} / 100 · 心情 ${cat.mood} / 100 · 亲密度 ${cat.bond} / 100 · 清洁度 ${cat.cleanliness ?? 70} / 100`);
-  show('猫咪', field('正在照顾', select), element('p', `${cat.coat} · ${cat.eyes}眼睛 · ${cat.personality}`), detail, buttons);
+  show('猫咪', list, buttons);
+}
+
+function showCatDetails(id) {
+  activeCatId = id;
+  const cat = activeCat();
+  const stats = element('dl', '', { class: 'cat-stats' });
+  for (const [label, value] of [['饱食度', cat.hunger], ['好感度', cat.bond], ['心情', cat.mood], ['清洁度', cat.cleanliness ?? 70]]) {
+    const stat = element('div');
+    stat.append(element('dt', label), element('dd', `${value} / 100`));
+    stats.append(stat);
+  }
+  show(cat.name, element('p', `${cat.coat} · ${cat.eyes}眼睛 · ${cat.personality}`), stats, button('返回猫咪列表', showCats));
+  menu.dataset.panel = 'cat-detail';
+  render();
 }
 
 function showCandidates(candidates) {
@@ -221,51 +251,344 @@ function showSettings() {
   }
   const name = element('input', '', { required: '', maxlength: '32', value: state.assistant.name });
   const role = element('input', '', { required: '', maxlength: '32', value: state.assistant.role });
+  const actors = [spriteChoice('小机素材', 'assistant')];
+  if (state.cats.length) {
+    const select = element('select');
+    for (const cat of state.cats) select.append(element('option', cat.name, { value: cat.id }));
+    select.value = activeCat().id;
+    actors.push(spriteChoice('猫咪素材', 'cat', select));
+  }
   show('猫咖设置', element('p', state.shop_name), form('保存设置', async () => {
     await act('cafe_rename_assistant', { name: name.value, role: role.value });
     menu.close();
     announce('设置已保存。');
-  }, [field('小机名字', name), field('小机职位', role)]));
+  }, [field('小机名字', name), field('小机职位', role)]),
+  element('h2', '角色素材', { class: 'report-section' }),
+  element('p', '支持 PNG、JPEG、GIF、WebP，单张最大 2 MB。'), ...actors);
+}
+
+function spriteChoice(label, target, select) {
+  const group = element('section', '', { class: 'sprite-settings' });
+  const file = element('input', '', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp', required: '' });
+  const update = async (image) => {
+    if (image?.size > 2 * 1024 * 1024) throw new Error('图片最大为 2 MB。');
+    const query = new URLSearchParams({ target });
+    if (select) query.set('cat_id', select.value);
+    const result = await api(`/api/sprites?${query}`, {
+      method: image ? 'PUT' : 'DELETE', headers: { 'X-Cat-Cafe': 'web' }, body: image ?? undefined,
+    });
+    apply(result);
+    file.value = '';
+    announce(image ? '角色素材已保存。' : '已恢复默认素材。');
+  };
+  if (select) group.append(field('选择猫咪', select));
+  group.append(form('应用素材', () => update(file.files[0]), [field(label, file)]),
+    button('恢复默认', () => run(() => update(null))));
+  return group;
+}
+
+function speak(role, line) {
+  const bubble = get(`#${role}-speech`);
+  get(`#${role}-line`).textContent = line;
+  bubble.hidden = false;
+  clearTimeout(speechTimers.get(role));
+  speechTimers.set(role, setTimeout(() => { bubble.hidden = true; }, 5800));
+}
+
+function productLine(product, label = `${product.name} × ${product.units}`) {
+  const row = element('span', '', { class: 'product-line' });
+  row.append(element('i', '', { class: 'pixel-product', 'data-product': product.id, 'aria-hidden': 'true' }), element('span', label));
+  return row;
+}
+
+function showGuest(guest) {
+  clearTimeout(guestTimer);
+  const bubble = get('#guest-speech');
+  const needs = [];
+  if (guest.petMinutes) needs.push(element('div', `想撸猫 ${guest.petMinutes} 分钟 · ${guest.petMinutes / 30 * 10} 金币`));
+  if (guest.lines.length) {
+    const order = element('div');
+    order.append(...guest.lines.map((product) => productLine(product)));
+    needs.push(order);
+  }
+  if (!needs.length) needs.push(element('div', '想进店坐一会儿。'));
+  bubble.replaceChildren(element('b', guest.name), ...needs);
+  bubble.hidden = false;
+  shownGuest = guest.id;
+  for (const visitor of get('#guests').children) visitor.setAttribute('aria-pressed', String(visitor.dataset.guest === shownGuest));
+  guestTimer = setTimeout(hideGuest, 8500);
+}
+
+function hideGuest() {
+  clearTimeout(guestTimer);
+  get('#guest-speech').hidden = true;
+  for (const visitor of get('#guests').children) visitor.setAttribute('aria-pressed', 'false');
+  shownGuest = undefined;
+}
+
+function updateBusiness(previous) {
+  const { business } = current;
+  stage.dataset.night = String(business.phase === 'closed');
+  const clock = get('#business-clock');
+  const hasCat = business.phase !== 'before';
+  const open = business.phase === 'open';
+  clock.hidden = !hasCat;
+  const label = `${business.time} · ${open ? '营业中' : '已打烊'}`;
+  if (clock.textContent !== label) clock.textContent = label;
+  get('.business-toggle').hidden = !hasCat;
+  get('#business-toggle-label').textContent = open ? '打烊' : '开业';
+  const job = get('#assistant-job');
+  job.hidden = !hasCat;
+  job.textContent = business.serving ? '小机 · 接单中' : open ? '小机 · 等待接单' : '小机 · 已下班';
+  const level = get('#level-status');
+  level.hidden = !hasCat;
+  const { progress } = business;
+  level.textContent = progress.needed ? `Lv.${progress.level} · ${progress.xp}/${progress.needed} 经验` : 'Lv.200 · 满级';
+
+  const old = previous?.guests ?? [];
+  if (signature(old) === signature(business.guests)) return;
+  const visitors = get('#guests');
+  visitors.replaceChildren(...business.guests.map((guest) => {
+    const dot = button('', () => showGuest(guest));
+    dot.className = 'guest';
+    dot.dataset.guest = guest.id;
+    dot.setAttribute('aria-label', `查看${guest.name}的需求`);
+    dot.setAttribute('aria-pressed', String(shownGuest === guest.id));
+    dot.append(element('i', '', { class: 'guest-sprite', 'aria-hidden': 'true' }));
+    return dot;
+  }));
+  const head = business.guests[0];
+  if (!head) {
+    hideGuest();
+    return;
+  }
+  if (previous?.day !== business.day || previous?.phase !== 'open') {
+    const day = business.day;
+    animateArrival(stage, visitors, get('#arrival-layer')).then(() => {
+      if (current.business.day === day && current.business.guests[0]?.id === head.id) showGuest(head);
+    });
+  } else if (old[0]?.id !== head.id) {
+    showGuest(head);
+  }
+}
+
+function loadSeenSummary() {
+  try {
+    return localStorage.getItem('cat-cafe-seen-summary-v04');
+  } catch {
+    return null;
+  }
+}
+
+function maybeShowSummary() {
+  const report = current?.business.lastSummary;
+  if (!report || !current.business.day || current.business.phase !== 'closed' || pending || report.key === seenSummary
+      || (menu.open && menu.dataset.panel !== 'tasks')) return;
+  showSummary(report);
+}
+
+function showSummary(report) {
+  seenSummary = report.key;
+  try {
+    localStorage.setItem('cat-cafe-seen-summary-v04', seenSummary);
+  } catch {
+    // The report is already saved on the server.
+  }
+  const sales = element('ul', '', { class: 'report-lines' });
+  for (const product of report.sales) {
+    const row = element('li');
+    row.append(productLine(product), element('b', `+${product.income} 金币`));
+    sales.append(row);
+  }
+  if (!report.sales.length) sales.append(element('li', '当天没有完成产品销售。'));
+  const pets = element('ul', '', { class: 'report-lines' });
+  for (const visitor of report.petRequests) {
+    const row = element('li');
+    row.append(element('span', `${visitor.name} · ${visitor.minutes} 分钟`), element('b', `+${visitor.income} 金币`));
+    pets.append(row);
+  }
+  if (!report.petRequests.length) pets.append(element('li', '当天没有撸猫需求。'));
+  const reviews = element('ul', '', { class: 'report-lines' });
+  for (const review of report.reviews) reviews.append(element('li', `${review.name} · ${review.kind}「${review.text}」`));
+  show('一日营业总结',
+    element('p', `${report.date} · ${report.time} · ${report.reason}`),
+    element('p', `接待 ${report.served}/${report.guests} 位 · 总收入 ${report.revenue} 金币${report.xp === undefined ? '' : ` · 经验 +${report.xp} · Lv.${report.level}`}`),
+    element('h2', `产品收入 · ${report.productRevenue} 金币`, { class: 'report-section' }), sales,
+    element('h2', `撸猫收入 · ${report.petRevenue} 金币 · 共 ${report.petMinutes} 分钟`, { class: 'report-section' }), pets,
+    element('h2', '顾客评语', { class: 'report-section' }), reviews.childElementCount ? reviews : element('p', '今日没有评语。'),
+    button('关闭总结', () => menu.close(), true));
+}
+
+const signature = (items) => items.map(({ id, status }) => id + (status ?? '')).join('|');
+
+function updateOpenPanel(previous) {
+  if (!menu.open || !previous) return;
+  const panel = menu.dataset.panel;
+  const scroll = menu.scrollTop;
+  const focus = document.activeElement?.dataset.focus;
+  if (panel === 'tasks' && (previous.business.phase !== current.business.phase
+      || previous.business.time !== current.business.time || previous.business.serving !== current.business.serving
+      || signature(previous.business.orders) !== signature(current.business.orders))) showTasks();
+  else if (panel === 'shop' && (previous.state?.coins !== current.state?.coins
+      || JSON.stringify(previous.state?.inventory) !== JSON.stringify(current.state?.inventory))) showShop();
+  else if (panel === 'cat-detail' && previous.state?.cats !== current.state?.cats
+      && previous.revision !== current.revision) showCatDetails(activeCatId);
+  else return;
+  const target = [...menu.querySelectorAll('[data-focus]')].find((item) => item.dataset.focus === focus);
+  target?.focus({ preventScroll: true });
+  menu.scrollTop = scroll;
 }
 
 function showTasks() {
+  const { business } = current;
   const cats = current.state?.cats ?? [];
+  const rows = element('ul', '', { class: 'order-list' });
+  const notice = business.phase === 'open'
+    ? (business.orders.length ? '将当前客人的订单交给小机。' : '小机正在接待这位客人。')
+    : '开业后从游戏时间 10:00 开始营业。';
+  for (const order of business.orders) {
+    const details = element('div');
+    details.append(...order.lines.map((product) => productLine(product)));
+    const item = element('li', '', { class: 'order' });
+    item.append(element('b', `${order.name} · ${order.total} 金币`, { class: 'order-name' }), details);
+    if (order.status === 'waiting') {
+      const assign = button('交给小机', () => run(async () => {
+        const result = await act('business_assign_order', { order_id: order.id });
+        menu.close();
+        announce(result.message);
+      }), true);
+      assign.dataset.focus = order.id;
+      item.append(assign);
+    } else {
+      item.append(element('p', '小机正在接待', { class: 'order-state' }));
+    }
+    rows.append(item);
+  }
+  const footer = element('div', '', { class: 'menu-buttons' });
+  if (business.lastSummary) footer.append(button('查看营业总结', () => showSummary(business.lastSummary)));
+  const prices = element('ul', '', { class: 'report-lines' });
+  for (const product of catalog.products) {
+    const row = element('li');
+    row.append(productLine(product, product.name), element('span', `${product.price} 金币`));
+    prices.append(row);
+  }
+  const priceList = element('details', '', { class: 'business-prices' });
+  priceList.append(element('summary', '营业菜单'), prices);
   const adopted = cats.length > 0;
   const fed = cats.some((cat) => cat.feed_count > 0 || cat.hunger > 70);
-  const actions = element('div', '', { class: 'menu-buttons' });
-  if (!adopted) actions.append(button('现在去领养', openAdoption, true));
-  if (adopted && !fed) actions.append(button('喂一次猫', () => {
-    menu.close();
-    takeCare('feed');
-  }, true));
-  show('猫咖任务', element('p', `${adopted ? '✓ 已完成' : '○ 待完成'}　领养一只猫`),
-    element('p', `${fed ? '✓ 已完成' : '○ 待完成'}　给猫咪喂一次食`), actions);
+  const checklist = element('details', '', { class: 'business-prices' });
+  checklist.append(element('summary', '照顾猫咪'),
+    element('p', `${adopted ? '✓' : '○'} 领养一只猫`),
+    element('p', `${fed ? '✓' : '○'} 给猫咪喂一次食`));
+  if (!adopted) checklist.append(button('现在去领养', openAdoption, true));
+  else if (!fed) checklist.append(button('喂一次猫', () => takeCare('feed'), true));
+  const status = business.phase === 'open'
+    ? `${business.time} · 第 ${business.day} 天 · 已接待 ${business.served}/${business.guestCount} 位`
+    : `等级 ${business.progress.level} · 下次开业接待 ${business.progress.nextGuests} 位`;
+  show('营业任务', element('p', status), element('p', notice), rows, priceList, checklist, footer);
+  menu.dataset.panel = 'tasks';
+}
+
+function showShop() {
+  const state = current.state;
+  const cash = state?.coins ?? 0;
+  const shelves = [1, 2, 3].map((row) => {
+    const entries = catalog.shop.filter((item) => item.row === row);
+    const shelf = element('section', '', { class: 'shop-shelf' });
+    const grid = element('div', '', { class: 'shop-grid' });
+    for (const item of entries) {
+      const card = element('div', '', { class: 'shop-item' });
+      const buy = button('购买', () => run(async () => {
+        const result = await act('shop_buy', { item_id: item.id });
+        announce(result.message);
+      }));
+      buy.setAttribute('aria-label', `购买${item.name}，${item.price} 金币`);
+      buy.dataset.focus = item.id;
+      buy.disabled = !state || cash < item.price;
+      card.append(element('img', '', { src: `/assets/shop-${item.id}.png`, alt: '' }),
+        element('b', item.name), element('small', `库存 ${state?.inventory?.[item.id] ?? 0}`), buy);
+      grid.append(card);
+    }
+    shelf.append(element('h2', `第 ${row} 排 · 每件 ${entries[0].price} 金币`), grid);
+    return shelf;
+  });
+  show('猫咖商店', element('p', `持有 ${cash} 金币 · 猫粮用于喂食，其他物品用于玩耍。`), ...shelves);
+  menu.dataset.panel = 'shop';
+}
+
+function doCare(action, cat, itemId) {
+  const [tool, reaction] = care[action];
+  const args = { cat_id: cat.id };
+  if (itemId) args.item_id = itemId;
+  return run(async () => {
+    const result = await act(tool, args);
+    if (menu.open) menu.close();
+    speak('cat', reaction);
+    celebrate();
+    announce(action === 'feed' ? `已喂食「${cat.name}」。` : result.message ?? `${cat.name}：${reaction}`);
+  });
 }
 
 function takeCare(action) {
   const cat = activeCat();
   if (!cat) return;
-  const [tool, reaction] = care[action];
+  if (action !== 'feed' && action !== 'play') return doCare(action, cat);
+  const isFood = action === 'feed';
+  const kind = isFood ? 'food' : 'toy';
+  const title = isFood ? '喂食' : '玩耍';
+  const inventory = current.state.inventory ?? {};
+  const stocked = catalog.shop.filter((item) => item.kind === kind && inventory[item.id] > 0);
+  if (!stocked.length) {
+    show(title, element('p', isFood ? '库存里没有猫粮。' : '库存里没有玩耍道具。'), button('打开商店', showShop, true));
+    return;
+  }
+  const select = element('select', '', { required: '' });
+  for (const item of stocked) select.append(element('option', `${item.name} · 剩余 ${inventory[item.id]}`, { value: item.id }));
+  const chooser = element('form', '', { class: 'fields' });
+  chooser.append(field(`${title}对象 · ${cat.name}`, select),
+    element('button', isFood ? '喂一份' : '消耗一个道具', { type: 'submit', class: 'primary' }));
+  chooser.addEventListener('submit', (event) => {
+    event.preventDefault();
+    doCare(action, cat, select.value);
+  });
+  show(title, chooser);
+}
+
+function showAssistantActions() {
+  const options = get('#assistant-actions');
+  options.hidden = !options.hidden;
+  get('.assistant').setAttribute('aria-expanded', String(!options.hidden));
+  speak('assistant', current.business.serving ? '卖力打工中……' : randomLine('assistant'));
+}
+
+function assistantEffect(kind) {
+  const layer = get('#assistant-fx');
+  const sprites = (kind === 'heart' ? ['heart'] : ['exclaim', 'question']).map((effect) =>
+    element('img', '', { src: `/assets/${effect}-effect.png`, alt: '' }),
+  );
+  layer.replaceChildren(...sprites);
+  setTimeout(() => sprites.forEach((sprite) => sprite.remove()), 1250);
+}
+
+function toggleBusiness() {
   run(async () => {
-    const result = await act(tool, { cat_id: cat.id });
-    get('#cat-line').textContent = reaction;
-    celebrate();
-    announce(result.message ?? `${cat.name}：${reaction}`);
+    const result = await act(current.business.phase === 'open' ? 'business_close' : 'business_open');
+    announce(result.message);
   });
 }
 
 const actions = {
   cats: showCats,
+  'cat-chat': () => speak('cat', randomLine('cat')),
+  'assistant-chat': showAssistantActions,
+  'assistant-hug': () => assistantEffect('heart'),
+  'assistant-bother': () => assistantEffect('question'),
+  'business-toggle': toggleBusiness,
   adoption: openAdoption,
   settings: showSettings,
   tasks: showTasks,
+  shop: showShop,
   save: () => show('本地存档', element('p', current.state ? '每次操作都会自动保存。关闭后再打开猫咖即可继续。' : '开店后自动保存进度。')),
-  shop: () => show('猫咖商店', element('p', '一份猫粮需要 5 猫猫币。选择「喂食」即可购买并喂给当前猫咪。'),
-    button('去喂食', () => {
-      menu.close();
-      if (activeCat()) get('[data-action="feed"]').focus();
-      else openAdoption();
-    }, true)),
   back: () => {
     if (menu.open) menu.close();
     else if (activeCat()) get('[data-action="cats"]').focus();
@@ -273,17 +596,20 @@ const actions = {
   },
 };
 
-get('.stage').addEventListener('click', (event) => {
+stage.addEventListener('click', (event) => {
   const action = event.target.closest('button')?.dataset.action;
   if (!action || pending || !current) return;
   if (action in care) takeCare(action);
   else actions[action]?.();
 });
 get('.close').addEventListener('click', () => menu.close());
+menu.addEventListener('close', maybeShowSummary);
 
 async function sync() {
   try {
+    if (!catalog) catalog = await api('/api/catalog');
     await refresh();
+    if (toast.textContent === '暂时连不上猫咖，请检查 Mac 上的网页服务。') announce('');
   } catch {
     if (!current) announce('暂时连不上猫咖，请检查 Mac 上的网页服务。');
   }

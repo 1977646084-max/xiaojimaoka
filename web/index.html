@@ -11,15 +11,16 @@
 <body>
   <main class="stage" aria-label="小机猫咖">
     <img class="room" src="/assets/room.png" alt="">
+    <img class="room night-room" src="/assets/room-night.png" alt="">
     <section class="stats" aria-label="猫咖状态">
       <div class="stat coins">
         <img src="/assets/coin.png" alt="">
-        <span><span class="stat-label">猫猫币</span><b id="coins">—</b></span>
+        <span><span class="stat-label">金币</span><b id="coins">—</b></span>
       </div>
       <div class="stat fullness">
         <img src="/assets/heart.png" alt="">
-        <span><span class="stat-label">饱食度</span><b id="fullness" aria-live="polite">— / 100</b></span>
-        <progress id="meter" max="100" value="0" aria-label="饱食度"></progress>
+        <span><span class="stat-label">好感度</span><b id="bond" aria-live="polite">— / 100</b></span>
+        <progress id="meter" max="100" value="0" aria-label="好感度"></progress>
       </div>
     </section>
 
@@ -29,16 +30,30 @@
       <button type="button" data-action="feed"><img src="/assets/feed.png" alt="喂食"></button>
       <button type="button" data-action="play"><img src="/assets/play.png" alt="玩耍"></button>
       <button type="button" data-action="pet"><img src="/assets/pet.png" alt="互动"></button>
-      <button type="button" data-action="rest"><img src="/assets/rest.png" alt="休息"></button>
+      <button type="button" class="business-toggle" data-action="business-toggle" hidden><img src="/assets/rest.png" alt=""><span id="business-toggle-label"></span></button>
     </nav>
 
-    <img class="actor assistant" src="/assets/assistant.png" alt="">
-    <div class="bubble assistant-bubble"><span id="assistant-line">店长，欢迎回来！</span></div>
-    <button type="button" class="actor resident" data-action="cats" aria-label="查看猫咪">
+    <button type="button" class="actor assistant" data-action="assistant-chat" aria-label="小机互动" aria-expanded="false">
+      <img src="/assets/assistant.png" alt="">
+    </button>
+    <div class="bubble assistant-bubble" id="assistant-speech" hidden><span id="assistant-line" role="status"></span></div>
+    <div class="assistant-fx" id="assistant-fx" aria-hidden="true"></div>
+    <div class="assistant-actions" id="assistant-actions" aria-label="小机互动选项" hidden>
+      <button type="button" data-action="assistant-hug">贴贴</button>
+      <button type="button" data-action="assistant-bother">骚扰</button>
+      <button type="button" data-action="assistant-ai" disabled>聊天</button>
+    </div>
+    <p class="assistant-job" id="assistant-job" hidden></p>
+    <button type="button" class="actor resident" data-action="cat-chat" aria-label="和小猫聊天">
       <img src="/assets/cat.png" alt="">
     </button>
-    <div class="bubble cat-bubble"><span id="cat-line">喵～</span></div>
+    <div class="bubble cat-bubble" id="cat-speech" hidden><span id="cat-line" role="status"></span></div>
     <button type="button" class="adopt-cta" data-action="adoption" hidden>领养一只猫</button>
+    <button type="button" class="business-clock" data-action="tasks" id="business-clock" hidden></button>
+    <p class="level-status" id="level-status" hidden></p>
+    <div class="guest-speech" id="guest-speech" role="status" hidden></div>
+    <div class="guests" id="guests" aria-label="到店客人"></div>
+    <div class="arrival-layer" id="arrival-layer" aria-hidden="true"></div>
 
     <nav class="rail cafe" aria-label="店铺菜单">
       <button type="button" data-action="settings"><img src="/assets/settings.png" alt="设置"></button>

@@ -39,8 +39,8 @@ input.on('line', (line) => {
       result = {
         protocolVersion: protocols.includes(params?.protocolVersion) ? params.protocolVersion : protocols[0],
         capabilities: { tools: {} },
-        serverInfo: { name: 'xiaoji-cat-cafe', version: '0.2.0' },
-        instructions: '用户说「帮我喂猫」时调用 cat_feed。有且只有一只猫时可省略 cat_id。',
+        serverInfo: { name: 'xiaoji-cat-cafe', version: '0.4.0' },
+        instructions: '用户说「帮我喂猫」时调用 cat_feed。一只猫时可省略 cat_id。缺猫粮时报告库存不足，由店长决定是否购买。',
       };
       break;
     case 'ping':

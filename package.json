@@ -1,10 +1,12 @@
 {
   "name": "xiaoji-cat-cafe",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "小机猫咖横屏像素网页与 stdio MCP",
-  "engines": { "node": "^22.13 || >=24" },
+  "engines": {
+    "node": "^22.13 || >=24"
+  },
   "scripts": {
     "start": "node server.mjs",
     "mcp": "node server.mjs",
