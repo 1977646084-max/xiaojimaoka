@@ -2,6 +2,12 @@
 
 小机猫咖包含横屏像素网页和本地 stdio MCP。网页和 Codex 都在 Mac 上访问同一套游戏逻辑与本地存档。手机和 iPad 可通过同一 Wi-Fi 打开网页。
 
+## Operit 下载与安装
+
+[下载小机猫咖 `.toolpkg`](https://github.com/1977646084-max/xiaojimaoka/raw/main/dist/xiaoji-catcafe.toolpkg) · [查看 Operit 安装教程](toolpkg/README.md)
+
+想在 Mac 上运行网页版或连接本地 MCP，请继续看下面的说明。
+
 ## 一、在 Mac 启动网页
 
 需要 Node.js 22.13 或更新的 22.x 版本，或 Node.js 24 及以上。解压后在终端执行（以解压到「下载」为例）：
