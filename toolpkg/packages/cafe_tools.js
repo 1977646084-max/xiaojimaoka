@@ -46,22 +46,28 @@
       "parameters": []
     },
     {
-      "name": "cat_candidates",
+      "name": "cat_create",
       "description": {
-        "zh": "生成三只可领养的猫咪，保存为候选名单。最多养 5 只。",
-        "en": "Generate 3 adoptable cats. Max 5 cats."
-      },
-      "parameters": []
-    },
-    {
-      "name": "cat_adopt",
-      "description": {
-        "zh": "从候选名单领养一只猫，需要给它起名。",
-        "en": "Adopt a cat from candidates."
+        "zh": "添加一只猫，需要起名。毛色、眼睛、性格可以指定，不填就随机。最多养 5 只。",
+        "en": "Add a cat with a name. coat/eyes/personality optional."
       },
       "parameters": [
-        {"name": "cat_id", "description": {"zh": "cat_candidates 返回的猫咪 ID。", "en": "Cat id."}, "type": "string", "required": true},
-        {"name": "name", "description": {"zh": "给猫起的名字。", "en": "Cat name."}, "type": "string", "required": true}
+        {"name": "name", "description": {"zh": "猫咪名字。", "en": "Cat name."}, "type": "string", "required": true},
+        {"name": "coat", "description": {"zh": "橘猫／奶牛猫／狸花猫／三花猫／黑猫／白猫／灰猫。", "en": "Coat."}, "type": "string", "required": false},
+        {"name": "eyes", "description": {"zh": "琥珀色／绿色／蓝色／金色。", "en": "Eye color."}, "type": "string", "required": false},
+        {"name": "personality", "description": {"zh": "黏人／傲娇／贪玩／慢热／贪吃／爱睡觉。", "en": "Personality."}, "type": "string", "required": false}
+      ]
+    },
+    {
+      "name": "cat_place",
+      "description": {
+        "zh": "把猫挪到猫房的指定位置，x、y 是百分比（左上为 0）。",
+        "en": "Move a cat to x/y percent position."
+      },
+      "parameters": [
+        {"name": "cat_id", "description": {"zh": "猫咪 id，只有一只时可省略。", "en": "Cat id."}, "type": "string", "required": false},
+        {"name": "x", "description": {"zh": "横向百分比 0-100。", "en": "X percent."}, "type": "string", "required": true},
+        {"name": "y", "description": {"zh": "纵向百分比 0-100。", "en": "Y percent."}, "type": "string", "required": true}
       ]
     },
     {
@@ -182,8 +188,8 @@ const tools = [
   { name: 'cafe_status', inputSchema: { properties: {}, required: [] } },
   { name: 'get_shop_status', inputSchema: { properties: {}, required: [] } },
   { name: 'get_cats', inputSchema: { properties: {}, required: [] } },
-  { name: 'cat_candidates', inputSchema: { properties: {}, required: [] } },
-  { name: 'cat_adopt', inputSchema: { properties: { cat_id: {}, name: {} }, required: ['cat_id', 'name'] } },
+  { name: 'cat_create', inputSchema: { properties: { name: {}, coat: {}, eyes: {}, personality: {} }, required: ['name'] } },
+  { name: 'cat_place', inputSchema: { properties: { cat_id: {}, x: {}, y: {} }, required: ['x', 'y'] } },
   { name: 'care_for_cat', inputSchema: { properties: { action: {}, cat_id: {}, item_id: {} }, required: ['action'] } },
   { name: 'shop_catalog', inputSchema: { properties: {}, required: [] } },
   { name: 'shop_buy', inputSchema: { properties: { item_id: {} }, required: ['item_id'] } },
@@ -233,8 +239,8 @@ exports.cafe_create = wrap('cafe_create', (a) => action('cafe_create', a));
 exports.cafe_status = wrap('cafe_status', (a) => action('cafe_status', a));
 exports.get_shop_status = wrap('get_shop_status', (a) => action('get_shop_status', a));
 exports.get_cats = wrap('get_cats', (a) => action('get_cats', a));
-exports.cat_candidates = wrap('cat_candidates', (a) => action('cat_candidates', a));
-exports.cat_adopt = wrap('cat_adopt', (a) => action('cat_adopt', a));
+exports.cat_create = wrap('cat_create', (a) => action('cat_create', a));
+exports.cat_place = wrap('cat_place', (a) => action('cat_place', a));
 exports.care_for_cat = wrap('care_for_cat', (a) => action('care_for_cat', a));
 exports.shop_catalog = wrap('shop_catalog', (a) => action('shop_catalog', a));
 exports.shop_buy = wrap('shop_buy', (a) => action('shop_buy', a));

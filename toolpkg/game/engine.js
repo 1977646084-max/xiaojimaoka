@@ -98,24 +98,29 @@ function candidateId() {
   return [Date.now().toString(36), candidateSequence.toString(36), Math.random().toString(36).slice(2)].join('-');
 }
 
-function createCandidates() {
-  return Array.from({ length: 3 }, () => ({
-    id: candidateId(), coat: pick(breeds), eyes: pick(eyes), personality: pick(personalities),
-    name: null, hunger: 70, mood: 70, bond: 0,
-  }));
+function placeCat(state, args) {
+  const cat = findCat(state, args.cat_id);
+  const x = Number(args.x);
+  const y = Number(args.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new GameError('位置无效');
+  cat.place = { x: Math.min(100, Math.max(0, x)), y: Math.min(100, Math.max(0, y)) };
+  return { cat };
 }
-
-function adopt(state, args, now) {
+function createCat(state, args, now) {
   if (state.cats.length >= 5) throw new GameError('猫咖最多收养 5 只猫');
-  const cat = state.candidates.find((item) => item.id === args.cat_id);
-  if (!cat) throw new GameError('候选名单已更新，请重新选择');
-  cat.name = text(args.name, '猫咪名字');
-  cat.careUpdatedAt = now;
+  const cat = {
+    id: candidateId(),
+    coat: breeds.includes(args.coat) ? args.coat : pick(breeds),
+    eyes: eyes.includes(args.eyes) ? args.eyes : pick(eyes),
+    personality: personalities.includes(args.personality) ? args.personality : pick(personalities),
+    name: text(args.name, '猫咪名字'),
+    hunger: 70, mood: 70, cleanliness: 70, bond: 0,
+    careUpdatedAt: now,
+  };
   state.cats.push(cat);
-  state.candidates = [];
+  if (state.cats.length === 1 && !state.business?.day) openBusiness(state, now);
   return { message: '领养成功', cat };
 }
-
 function itemForUse(state, id, kind) {
   const stocked = shop.filter((item) => item.kind === kind && (state.inventory?.[item.id] ?? 0) > 0);
   const item = id ? stocked.find((candidate) => candidate.id === id) : stocked[0];
@@ -148,15 +153,10 @@ function buy(state, id) {
 
 function change(state, name, args, now) {
   switch (name) {
-    case 'cat_candidates':
-      if (state.cats.length >= 5) throw new GameError('猫咖最多收养 5 只猫');
-      state.candidates = createCandidates();
-      return state.candidates;
-    case 'cat_adopt': {
-      const result = adopt(state, args, now);
-      if (state.cats.length === 1 && !state.business.day) openBusiness(state, now);
-      return result;
-    }
+    case 'cat_create':
+      return createCat(state, args, now);
+    case 'cat_place':
+      return placeCat(state, args);
     case 'cafe_rename_assistant':
       if (args.name?.trim()) state.assistant.name = args.name.trim();
       if (args.role?.trim()) state.assistant.role = args.role.trim();

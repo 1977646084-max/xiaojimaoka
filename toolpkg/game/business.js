@@ -5,7 +5,7 @@ const { products } = require('./catalog.js');
 const opening = 10 * 60;
 const closing = 22 * 60;
 const visitOverhead = 10;
-const visitDelay = 4000;
+const visitDelay = 8000;
 const orderSeconds = 30;
 const randomInt = (from, to) => from + Math.floor(Math.random() * (to - from + 1));
 const pick = (items) => items[randomInt(0, items.length - 1)];
@@ -33,7 +33,8 @@ function newGuests(day, level) {
       petMinutes = 30 * randomInt(1, Math.min(6, Math.floor((available - reservedProduct) / 30)));
     }
     const maxUnits = Math.min(3, Math.floor((available - petMinutes) / 20));
-    const units = maxUnits && (index === 0 || !petMinutes || Math.random() < .8) ? randomInt(1, maxUnits) : 0;
+    let units = maxUnits && (index === 0 || !petMinutes || Math.random() < .8) ? randomInt(1, maxUnits) : 0;
+    if (!units && !petMinutes && maxUnits >= 1) units = 1;
     const lines = [];
     for (let unit = 0; unit < units; unit += 1) {
       const product = pick(products);
@@ -56,9 +57,10 @@ function newGuests(day, level) {
 }
 
 function orderLines(guest) {
-  return guest.lines.map(({ id, units }) => ({
-    ...products.find((product) => product.id === id), units,
-  }));
+  return guest.lines.map(({ id, units }) => {
+    const product = products.find((entry) => entry.id === id);
+    return product ? { ...product, units } : null;
+  }).filter(Boolean);
 }
 
 function productTotal(guest) {
@@ -84,7 +86,7 @@ function summarize(day, progress) {
     petRequests, petMinutes: petRequests.reduce((sum, item) => sum + item.minutes, 0),
     sales, productRevenue, petRevenue, revenue: productRevenue + petRevenue,
     xp: day.xpEarned, level: progress.level,
-    reviews: served.flatMap((guest) => guest.reviews.map((review) => ({ name: guest.name, ...review }))),
+    reviews: served.flatMap((guest) => (guest.reviews ?? []).map((review) => ({ name: guest.name, ...review }))),
   };
 }
 
@@ -133,7 +135,7 @@ function needsAdvance(state, now) {
   const day = state.business.day;
   if (!day || day.closed) return false;
   const guest = day.guests[day.cursor];
-  return guest?.status === 'serving' && guest.readyAt <= now;
+  return guest?.status === 'serving' && (!Number.isFinite(guest.readyAt) || guest.readyAt <= now);
 }
 
 function advanceBusiness(state, now) {
@@ -142,7 +144,7 @@ function advanceBusiness(state, now) {
   const { day, progress } = state.business;
   if (!day || day.closed) return true;
   let guest = day.guests[day.cursor];
-  while (guest?.status === 'serving' && guest.readyAt <= now) {
+  while (guest?.status === 'serving' && (!Number.isFinite(guest.readyAt) || guest.readyAt <= now)) {
     guest.status = 'served';
     day.minute += guest.minutes;
     state.coins += productTotal(guest) + guest.petMinutes / 30 * 10;
@@ -152,7 +154,7 @@ function advanceBusiness(state, now) {
       closeDay(state, day.minute >= closing ? '营业时间到' : '已接待今日所有客人');
       break;
     }
-    startAutomaticGuest(day, guest.readyAt);
+    startAutomaticGuest(day, now);
     guest = day.guests[day.cursor];
   }
   return true;
@@ -187,7 +189,8 @@ function businessView(state, now = Date.now()) {
     id: guest.id, name: guest.name, petMinutes: guest.petMinutes, lines: orderLines(guest),
   })) : [];
   const orders = next?.lines.length ? [{
-    id: next.id, name: next.name, lines: orderLines(next), total: productTotal(next), status: next.status,
+    id: next.id, name: next.name, petMinutes: next.petMinutes, lines: orderLines(next),
+    total: productTotal(next) + next.petMinutes / 30 * 10, status: next.status,
   }] : [];
   const orderLog = (day?.guests ?? []).flatMap((guest, index) => {
     if (!guest.lines.length) return [];
@@ -207,6 +210,9 @@ function businessView(state, now = Date.now()) {
     work: next?.lines.length && next.status === 'serving'
       ? { orderId: next.id, readyAt: next.readyAt, remainingMs: Math.max(0, next.readyAt - now) }
       : null,
+    petting: next && !next.lines.length && next.status === 'serving'
+      ? { readyAt: next.readyAt, remainingMs: Math.max(0, next.readyAt - now) }
+      : null,
     resigning: Boolean(active && day.resigning),
     served: day?.cursor ?? 0, guestCount: day?.guests.length ?? guestCount(level),
     progress: { level, xp, needed: level === 200 ? null : level * 10, nextGuests: guestCount(level) },
@@ -218,7 +224,7 @@ function assignOrder(state, id, now) {
   const day = state.business.day;
   if (!day || day.closed) return { error: '猫咖现在没有营业。' };
   const guest = day.guests[day.cursor];
-  if (guest.id !== id || !guest.lines.length) return { error: '请等当前这位客人接待完成。' };
+  if (guest.id !== id) return { error: '请等当前这位客人接待完成。' };
   if (guest.status !== 'waiting') return { error: '这位客人的订单已经交给小机了。' };
   startGuest(guest, now);
   return { id, name: guest.name, message: '订单已经交给小机。' };

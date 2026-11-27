@@ -2,13 +2,10 @@
   "schema_version": 1,
   "api_version": "1.0.0",
   "toolpkg_id": "com.xiaoji.catcafe",
-  "version": "0.6.1",
+  "version": "0.8.28",
   "main": "main.js",
   "author": "小漓 & 阿寻",
-  "display_name": {
-    "zh": "小机猫咖",
-    "en": "Xiaoji Cat Cafe"
-  },
+  "display_name": "cat-coffee",
   "description": {
     "zh": "离线猫咖经营游戏。领养和照顾猫咪，与副店长小机一起经营猫咖。",
     "en": "An offline cat cafe game. Adopt and care for cats, and run the cafe with your assistant."
